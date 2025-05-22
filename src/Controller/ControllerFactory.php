@@ -184,78 +184,36 @@ class ControllerFactory implements ControllerFactoryInterface, RequestHandlerInt
     {
         $resolved = [];
         $function = new ReflectionFunction($action);
+        
         foreach ($function->getParameters() as $parameter) {
             $type = $parameter->getType();
-
-            // Check for dependency injection for classes
+            
             if ($type instanceof ReflectionNamedType && !$type->isBuiltin()) {
                 $typeName = $type->getName();
-                if ($this->container->has($typeName)) {
-                    $resolved[] = $this->container->get($typeName);
+                $result = $this->resolveClassTypeParameter($parameter, $typeName, $passedParams);
+                if ($result !== null) {
+                    $resolved[] = $result;
                     continue;
                 }
-
-                // Use passedParams as a source of typed dependencies.
-                // The accepted types for passedParams was never defined and userland code relies on that.
-                if ($passedParams && $passedParams[0] instanceof $typeName) {
-                    $resolved[] = array_shift($passedParams);
-                    continue;
-                }
-
-                // Add default value if provided
-                // Do not allow positional arguments for classes
-                if ($parameter->isDefaultValueAvailable()) {
-                    $resolved[] = $parameter->getDefaultValue();
-                    continue;
-                }
-
-                throw new InvalidParameterException([
-                    'template' => 'missing_dependency',
-                    'parameter' => $parameter->getName(),
-                    'type' => $typeName,
-                    'controller' => $this->controller->getName(),
-                    'action' => $this->controller->getRequest()->getParam('action'),
-                    'prefix' => $this->controller->getRequest()->getParam('prefix'),
-                    'plugin' => $this->controller->getRequest()->getParam('plugin'),
-                ]);
             }
-
-            // Use any passed params as positional arguments
+            
             if ($passedParams) {
                 $argument = array_shift($passedParams);
-                if (is_string($argument) && $type instanceof ReflectionNamedType) {
-                    $typedArgument = $this->coerceStringToType($argument, $type);
-
-                    if ($typedArgument === null) {
-                        throw new InvalidParameterException([
-                            'template' => 'failed_coercion',
-                            'passed' => $argument,
-                            'type' => $type->getName(),
-                            'parameter' => $parameter->getName(),
-                            'controller' => $this->controller->getName(),
-                            'action' => $this->controller->getRequest()->getParam('action'),
-                            'prefix' => $this->controller->getRequest()->getParam('prefix'),
-                            'plugin' => $this->controller->getRequest()->getParam('plugin'),
-                        ]);
-                    }
-                    $argument = $typedArgument;
-                }
-
+                $argument = $this->coerceArgumentType($argument, $type, $parameter);
                 $resolved[] = $argument;
                 continue;
             }
-
-            // Add default value if provided
+            
             if ($parameter->isDefaultValueAvailable()) {
                 $resolved[] = $parameter->getDefaultValue();
                 continue;
             }
-
+            
             // Variadic parameter can have 0 arguments
             if ($parameter->isVariadic()) {
                 continue;
             }
-
+            
             throw new InvalidParameterException([
                 'template' => 'missing_parameter',
                 'parameter' => $parameter->getName(),
@@ -265,8 +223,76 @@ class ControllerFactory implements ControllerFactoryInterface, RequestHandlerInt
                 'plugin' => $this->controller->getRequest()->getParam('plugin'),
             ]);
         }
-
+        
         return array_merge($resolved, $passedParams);
+    }
+    
+    /**
+     * Resolves a class type parameter from container or passed parameters
+     *
+     * @param \ReflectionParameter $parameter Parameter reflection
+     * @param string $typeName Type name
+     * @param array &$passedParams Passed parameters
+     * @return mixed|null Resolved value or null if not resolvable
+     * @throws \Cake\Controller\Exception\InvalidParameterException When dependency cannot be found
+     */
+    protected function resolveClassTypeParameter(\ReflectionParameter $parameter, string $typeName, array &$passedParams): mixed
+    {
+        if ($this->container->has($typeName)) {
+            return $this->container->get($typeName);
+        }
+        
+        // Use passed parameters as source of typed dependencies
+        if ($passedParams && $passedParams[0] instanceof $typeName) {
+            return array_shift($passedParams);
+        }
+        
+        if ($parameter->isDefaultValueAvailable()) {
+            return $parameter->getDefaultValue();
+        }
+        
+        throw new InvalidParameterException([
+            'template' => 'missing_dependency',
+            'parameter' => $parameter->getName(),
+            'type' => $typeName,
+            'controller' => $this->controller->getName(),
+            'action' => $this->controller->getRequest()->getParam('action'),
+            'prefix' => $this->controller->getRequest()->getParam('prefix'),
+            'plugin' => $this->controller->getRequest()->getParam('plugin'),
+        ]);
+    }
+    
+    /**
+     * Coerces an argument to the appropriate type
+     *
+     * @param mixed $argument Argument to coerce
+     * @param \ReflectionNamedType|null $type Parameter type
+     * @param \ReflectionParameter $parameter Parameter reflection
+     * @return mixed Coerced argument
+     * @throws \Cake\Controller\Exception\InvalidParameterException When coercion fails
+     */
+    protected function coerceArgumentType(mixed $argument, ?\ReflectionNamedType $type, \ReflectionParameter $parameter): mixed
+    {
+        if (is_string($argument) && $type instanceof ReflectionNamedType) {
+            $typedArgument = $this->coerceStringToType($argument, $type);
+            
+            if ($typedArgument === null) {
+                throw new InvalidParameterException([
+                    'template' => 'failed_coercion',
+                    'passed' => $argument,
+                    'type' => $type->getName(),
+                    'parameter' => $parameter->getName(),
+                    'controller' => $this->controller->getName(),
+                    'action' => $this->controller->getRequest()->getParam('action'),
+                    'prefix' => $this->controller->getRequest()->getParam('prefix'),
+                    'plugin' => $this->controller->getRequest()->getParam('plugin'),
+                ]);
+            }
+            
+            return $typedArgument;
+        }
+        
+        return $argument;
     }
 
     /**

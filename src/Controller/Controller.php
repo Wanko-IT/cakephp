@@ -601,17 +601,7 @@ class Controller implements EventListenerInterface, EventDispatcherInterface
      */
     public function startupProcess(): ?ResponseInterface
     {
-        $result = $this->dispatchEvent('Controller.initialize')->getResult();
-        if ($result instanceof ResponseInterface) {
-            return $result;
-        }
-
-        $result = $this->dispatchEvent('Controller.startup')->getResult();
-        if ($result instanceof ResponseInterface) {
-            return $result;
-        }
-
-        return null;
+        return $this->_dispatchControllerEvent('Controller.initialize', 'Controller.startup');
     }
 
     /**
@@ -625,11 +615,23 @@ class Controller implements EventListenerInterface, EventDispatcherInterface
      */
     public function shutdownProcess(): ?ResponseInterface
     {
-        $result = $this->dispatchEvent('Controller.shutdown')->getResult();
-        if ($result instanceof ResponseInterface) {
-            return $result;
+        return $this->_dispatchControllerEvent('Controller.shutdown');
+    }
+    
+    /**
+     * Helper method to dispatch controller events and handle responses
+     *
+     * @param string ...$events Event names to dispatch
+     * @return \Psr\Http\Message\ResponseInterface|null
+     */
+    protected function _dispatchControllerEvent(string ...$events): ?ResponseInterface
+    {
+        foreach ($events as $event) {
+            $result = $this->dispatchEvent($event)->getResult();
+            if ($result instanceof ResponseInterface) {
+                return $result;
+            }
         }
-
         return null;
     }
 
@@ -835,16 +837,13 @@ class Controller implements EventListenerInterface, EventDispatcherInterface
 
         $url = Router::url($default, !$local);
         $base = $this->request->getAttribute('base');
-        if ($local && $base && str_starts_with($url, $base)) {
-            $url = substr($url, strlen($base));
-            if (!str_starts_with($url, '/')) {
-                return '/' . $url;
-            }
-
+        
+        if (!$local || !$base || !str_starts_with($url, $base)) {
             return $url;
         }
-
-        return $url;
+        
+        $url = substr($url, strlen($base));
+        return str_starts_with($url, '/') ? $url : '/' . $url;
     }
 
     /**
@@ -922,6 +921,9 @@ class Controller implements EventListenerInterface, EventDispatcherInterface
     /**
      * Called before the controller action. You can use this method to configure and customize components
      * or perform logic that needs to happen before each controller action.
+     * 
+     * This method is triggered as part of the Controller.initialize event. You can use
+     * this method to configure components, set view variables, or perform other setup tasks.
      *
      * @param \Cake\Event\EventInterface<\Cake\Controller\Controller> $event An Event instance
      * @return void
