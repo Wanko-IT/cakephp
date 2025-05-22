@@ -601,7 +601,17 @@ class Controller implements EventListenerInterface, EventDispatcherInterface
      */
     public function startupProcess(): ?ResponseInterface
     {
-        return $this->_dispatchControllerEvent('Controller.initialize', 'Controller.startup');
+        $result = $this->dispatchEvent('Controller.initialize')->getResult();
+        if ($result instanceof ResponseInterface) {
+            return $result;
+        }
+
+        $result = $this->dispatchEvent('Controller.startup')->getResult();
+        if ($result instanceof ResponseInterface) {
+            return $result;
+        }
+
+        return null;
     }
 
     /**
@@ -615,23 +625,11 @@ class Controller implements EventListenerInterface, EventDispatcherInterface
      */
     public function shutdownProcess(): ?ResponseInterface
     {
-        return $this->_dispatchControllerEvent('Controller.shutdown');
-    }
-    
-    /**
-     * Helper method to dispatch controller events and handle responses
-     *
-     * @param string ...$events Event names to dispatch
-     * @return \Psr\Http\Message\ResponseInterface|null
-     */
-    protected function _dispatchControllerEvent(string ...$events): ?ResponseInterface
-    {
-        foreach ($events as $event) {
-            $result = $this->dispatchEvent($event)->getResult();
-            if ($result instanceof ResponseInterface) {
-                return $result;
-            }
+        $result = $this->dispatchEvent('Controller.shutdown')->getResult();
+        if ($result instanceof ResponseInterface) {
+            return $result;
         }
+
         return null;
     }
 
